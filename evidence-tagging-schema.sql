@@ -44,6 +44,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to get evidence with all specified tags (AND logic)
+CREATE OR REPLACE FUNCTION get_evidence_with_all_tags(tag_ids INTEGER[])
+RETURNS TABLE(
+    id INTEGER,
+    name TEXT,
+    case_number TEXT,
+    file_type TEXT,
+    hash TEXT,
+    submitted_by TEXT,
+    timestamp TIMESTAMPTZ
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT e.id, e.name, e.case_number, e.file_type, e.hash, e.submitted_by, e.timestamp
+    FROM evidence e
+    WHERE e.id IN (
+        SELECT et.evidence_id
+        FROM evidence_tags et
+        WHERE et.tag_id = ANY(tag_ids)
+        GROUP BY et.evidence_id
+        HAVING COUNT(DISTINCT et.tag_id) = array_length(tag_ids, 1)
+    );
+END;
+$$ LANGUAGE plpgsql;
+
 -- Trigger to automatically update usage count
 DROP TRIGGER IF EXISTS trigger_update_tag_usage ON evidence_tags;
 CREATE TRIGGER trigger_update_tag_usage
