@@ -271,13 +271,19 @@ const logAdminAction = async (adminWallet, actionType, targetWallet, details) =>
 };
 
 // API Routes
+// Rate limiter for public policy pages
+const policyPageLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 200 // limit each IP to 200 requests per window for policy pages
+});
+
 // Privacy policy route
-app.get('/privacy', (req, res) => {
+app.get('/privacy', policyPageLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
 });
 
 // Data protection route
-app.get('/data-protection', (req, res) => {
+app.get('/data-protection', policyPageLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'data-protection.html'));
 });
 
