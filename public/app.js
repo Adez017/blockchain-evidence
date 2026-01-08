@@ -424,7 +424,15 @@ async function connectWallet() {
 
         userAccount = accounts[0];
 
-        // Always create admin data for any connected wallet
+        // Show role selection wizard for new users
+        if (typeof showRoleWizard === 'function') {
+            showRoleWizard(userAccount);
+            showLoading(false);
+            hideConnectionLoader();
+            return;
+        }
+
+        // Fallback to existing admin logic if wizard not available
         const adminData = {
             fullName: 'Administrator',
             email: 'admin@evid-dgc.com',
