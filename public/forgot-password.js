@@ -6,7 +6,7 @@ class ForgotPasswordManager {
 
     initializeForgotPassword() {
         // Add forgot password link to login forms
-        this.addForgotPasswordLinks();
+        // this.addForgotPasswordLinks();
         
         // Handle forgot password form submission
         const forgotForm = document.getElementById('forgotPasswordForm');
