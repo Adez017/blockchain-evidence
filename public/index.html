@@ -28,9 +28,9 @@
     <header class="header-nav">
         <div class="navbar-container">
             <div class="nav-brand">
-                <img src="logo-32x32.png" alt="Logo" class="brand-logo" style="height: 32px; width: 32px;">
+                <img src="logo-32x32.png" alt="Logo" class="brand-logo">
             </div>
-            <button class="menu-toggle" id="menuToggle">
+            <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu">
                 <i data-lucide="menu" class="hamburger-icon"></i>
             </button>
             <nav class="nav-menu" id="navMenu">
@@ -74,7 +74,7 @@
         <div class="hero-section">
             <div class="hero-content">
                 <div class="hero-icon">
-                    <img src="logo-32x32.png" alt="Logo" class="hero-logo" style="height: 120px; width: 120px;">
+                    <img src="logo-32x32.png" alt="Logo" class="hero-logo">
                 </div>
                 <h1>Blockchain Evidence Management System</h1>
                 <p class="hero-subtitle">Blockchain Evidence Management System</p>
@@ -587,7 +587,7 @@
                         </div>
                         <h3>GitHub</h3>
                         <p>Source code and issues</p>
-                        <a href="https://github.com/Gooichand/blockchain-evidence" target="_blank">View Repository</a>
+                        <a href="https://github.com/Gooichand/blockchain-evidence" target="_blank" rel="noopener noreferrer">View Repository</a>
                     </div>
                     <div class="contact-item">
                         <div class="contact-icon">
@@ -607,7 +607,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Email Login</h3>
-                <button class="modal-close" onclick="closeEmailLogin()">
+                <button class="modal-close" onclick="closeEmailLogin()"aria-label="Close email login modal">
                     <i data-lucide="x"></i>
                 </button>
             </div>
@@ -645,7 +645,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Create Account</h3>
-                <button class="modal-close" onclick="closeEmailRegistration()">
+                <button class="modal-close" onclick="closeEmailRegistration()" aria-label="Close email registration">
                     <i data-lucide="x"></i>
                 </button>
             </div>
@@ -717,7 +717,7 @@
     <div id="errorModal" class="modal">
         <div class="modal-content error-content">
             <div class="error-icon-wrapper">
-                <i data-lucide="alert-circle" class="error-icon" style="color: #ef4444; width: 64px; height: 64px;"></i>
+                <i data-lucide="alert-circle" class="error-icon"></i>
             </div>
             <h2 id="errorTitle">Error</h2>
             <div id="errorDescription" class="error-message">An error occurred</div>
@@ -733,7 +733,7 @@
         <div class="footer-container">
             <div class="footer-section">
                 <div class="footer-brand">
-                    <img src="logo-32x32.png" alt="Logo" class="footer-logo" style="height: 24px; width: 24px;">
+                    <img src="logo-32x32.png" alt="Logo" class="footer-logo">
                 </div>
                 <p>Secure blockchain evidence management for law enforcement and legal professionals.</p>
             </div>
@@ -750,14 +750,14 @@
                 <h3>Legal</h3>
                 <ul>
                     <li><a href="privacy.html">Privacy Policy</a></li>
-                    <li><a href="#">Terms of Service</a></li>
-                    <li><a href="#">Security Policy</a></li>
+                    <li><a href="terms.html">Terms of Service</a></li>
+                    <li><a href="security.html">Security Policy</a></li>
                 </ul>
             </div>
             <div class="footer-section">
                 <h3>Resources</h3>
                 <ul>
-                    <li><a href="https://github.com/Gooichand/blockchain-evidence" target="_blank">GitHub</a></li>
+                    <li><a href="https://github.com/Gooichand/blockchain-evidence" target="_blank" rel="noopener noreferrer">GitHub</a></li>
                     <li><a href="api-reference.html">API Documentation</a></li>
                     <li><a href="#">Support</a></li>
                 </ul>
@@ -769,7 +769,7 @@
     </footer>
 
     <!-- Scroll to Top Button -->
-    <button id="scrollUpBtn" class="scroll-up-btn">
+    <button id="scrollUpBtn" class="scroll-up-btn" onclick="scrollToTop()" aria-label="Scroll to top">
         <i data-lucide="arrow-up"></i>
     </button>
 
