@@ -1087,7 +1087,9 @@ body.modal-open {
 }
 
 /* Hide scrollbar for Chrome/Safari/Opera */
-.modal-content::-webkit-scrollbar {}
+.modal-content::-webkit-scrollbar {
+  display: none;
+}
 
 .modal-content::-webkit-scrollbar-track {
   background: transparent;
