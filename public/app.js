@@ -316,7 +316,11 @@ function togglePasswordVisibility(inputId) {
     if (!input) return;
 
     const wrapper = input.closest('.password-input-wrapper');
+    if(!wrapper)
+      return;
     const toggleBtn = wrapper.querySelector('.password-toggle-btn');
+    if(!toggle)
+      return ;
     const icon = toggleBtn.querySelector('svg');
 
     const isPassword = input.type === "password";
@@ -723,15 +727,15 @@ function initializeNavigation() {
       navMenu.classList.toggle("active");
 
       const icon = menuToggle.querySelector("i");
-     
-          if (navMenu.classList.contains("active")) {
+     if(icon){
+      if (navMenu.classList.contains("active")) {
         icon.setAttribute("data-lucide", "x");
       } else {
         icon.setAttribute("data-lucide", "menu");
       }
-      
-      
       lucide.createIcons();
+     }
+         
     });
 
     document.addEventListener("click", (e) => {
