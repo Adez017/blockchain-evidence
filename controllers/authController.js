@@ -219,8 +219,12 @@ const walletRegister = async (req, res) => {
     try {
         const { walletAddress, fullName, role, department, jurisdiction, badgeNumber } = req.body;
         
-        console.log('Wallet registration request:', { walletAddress, fullName, role, department, jurisdiction });
-
+        console.log('Wallet registration request:', {
+          role,
+          department,
+          jurisdiction,
+          walletSuffix: walletAddress?.slice(-6)
+        });
         if (!validateWalletAddress(walletAddress)) {
             return res.status(400).json({ error: 'Invalid wallet address' });
         }
