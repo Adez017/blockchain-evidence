@@ -17,29 +17,42 @@
 > ### ✅ **PHASE 2: COMPLETE** - Blockchain & IPFS Integration
 >
 > - TRUE BLOCKCHAIN INTEGRATION ✅
->   - Polygon Amoy Testnet Deployment
->   - Smart Contract (EvidenceStorage.sol)
->   - Real On-Chain Transactions
->   - Transaction Hash Verification
->   - Gas Usage Tracking
 > - IPFS DECENTRALIZED STORAGE ✅
->   - Pinata API Integration
->   - Content Identifier (CID) Generation
->   - Decentralized File Retrieval
->   - Pin Management System
 > - ADVANCED SECURITY ✅
->   - Rate Limiting (Blockchain: 10/min, Upload: 50/hr, Verification: 30/min)
->   - Enhanced API Protection
->   - Transaction Monitoring
 > - SYSTEM MONITORING ✅
->   - Real-Time Health Checks
->   - Blockchain Metrics Dashboard
->   - IPFS Statistics Tracking
->   - Automated Alerts System
 > - PERFORMANCE OPTIMIZATION ✅
->   - Database Indexing for Blockchain Data
->   - Efficient Query Patterns
->   - Rate-Limited Operations
+> - ### **PHASE 3: Advanced Forensic Features in progress** 🔃
+> **-1. AI-Powered Detection**
+> - •Deepfake detection (face swap, audio morphing)
+> - •	GAN artifact identification
+> - •	Expression synthesis detection
+> - •	Audio spectrogram analysis
+> - **2. Metadata Forensics**
+> - •	EXIF extraction (GPS, device ID, firmware)
+> - •	Timestamp verification
+> - •	Camera fingerprinting
+> - •	Metadata consistency analysis
+> -**3.  Automated Verification**
+> - •	Hash verification workflow
+> - •	Real-time integrity checking
+> - •	Automated mismatch alerts
+> - •	Continuous monitoring
+> -** 4. Quality Assessment**
+> - •	Forensic Soundness Scoring (0-100)
+> - •	Evidence quality metrics
+> - •	Admissibility prediction
+> - •	Chain of custody completeness score
+> - **5. Legal Tools**
+> - •	Daubert Standard compliance checker
+> - •	Federal Rules of Evidence alignment
+> - •	Legal review dashboard
+> - •	Admissibility assessment toolkit
+> - **6. Court Interface**
+> - •	Judicial order recording
+> - •	Evidence admission/exclusion tracking
+> - •	Court official dashboard
+> - •	Hearing schedule integration
+
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
