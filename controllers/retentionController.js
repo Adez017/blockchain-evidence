@@ -137,12 +137,17 @@ const setLegalHold = async (req, res) => {
 
     if (error) throw error;
 
-    await supabase.from('activity_logs').insert({
-      user_id: userWallet,
-      action: legalHold ? 'legal_hold_set' : 'legal_hold_removed',
-      details: `Evidence ID: ${id}`,
-      timestamp: new Date().toISOString(),
-    });
+    // Log in a separate try/catch so audit failures don't affect the HTTP response
+    try {
+      await supabase.from('activity_logs').insert({
+        user_id: userWallet,
+        action: legalHold ? 'legal_hold_set' : 'legal_hold_removed',
+        details: `Evidence ID: ${id}`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (logError) {
+      console.error('Failed to log legal hold action:', logError);
+    }
 
     res.json({ success: true });
   } catch (error) {
@@ -177,17 +182,18 @@ const bulkRetentionPolicy = async (req, res) => {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + policy.retention_days);
 
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from('evidence')
       .update({
         retention_policy_id: policyId,
         expiry_date: expiryDate.toISOString(),
       })
-      .in('id', evidenceIds);
+      .in('id', evidenceIds)
+      .select('*', { count: 'exact' });
 
     if (error) throw error;
 
-    res.json({ success: true, updated: evidenceIds.length });
+    res.json({ success: true, updated: count || 0 });
   } catch (error) {
     console.error('Bulk retention policy error:', error);
     res.status(500).json({ error: 'Failed to apply retention policy' });

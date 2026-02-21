@@ -217,11 +217,17 @@ const getDownloadHistory = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: Admin or Auditor role required' });
     }
 
+    // Validate id to prevent ilike pattern injection
+    const safeId = parseInt(id, 10);
+    if (isNaN(safeId)) {
+      return res.status(400).json({ error: 'Invalid evidence ID format' });
+    }
+
     const { data: downloadHistory, error } = await supabase
       .from('activity_logs')
       .select('*')
       .or(`action.eq.evidence_download,action.eq.evidence_bulk_export`)
-      .ilike('details', `%"evidence_id":${id}%`)
+      .ilike('details', `%"evidence_id":${safeId}%`)
       .order('timestamp', { ascending: false });
 
     if (error) {
@@ -257,7 +263,27 @@ const getDownloadHistory = async (req, res) => {
 // Get all evidence
 const getAllEvidence = async (req, res) => {
   try {
-    const { limit = 50, offset = 0, case_id, status, submitted_by } = req.query;
+    const { limit = 50, offset = 0, case_id, status, submitted_by, userWallet } = req.query;
+
+    if (!validateWalletAddress(userWallet)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('wallet_address', userWallet)
+      .eq('is_active', true)
+      .single();
+
+    if (userError || !user) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    if (user.role === 'public_viewer') {
+      return res.status(403).json({ error: 'Public viewers cannot list evidence' });
+    }
+
     const limitNum = parseInt(limit, 10) || 50;
     const offsetNum = parseInt(offset, 10) || 0;
 
@@ -298,6 +324,27 @@ const getAllEvidence = async (req, res) => {
 const getEvidenceById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userWallet } = req.query;
+
+    if (!validateWalletAddress(userWallet)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('wallet_address', userWallet)
+      .eq('is_active', true)
+      .single();
+
+    if (userError || !user) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    if (user.role === 'public_viewer') {
+      return res.status(403).json({ error: 'Public viewers cannot view evidence details' });
+    }
+
     const { data: evidence, error } = await supabase
       .from('evidence')
       .select('*')
@@ -319,6 +366,26 @@ const getEvidenceById = async (req, res) => {
 const getEvidenceByCase = async (req, res) => {
   try {
     const { caseId } = req.params;
+    const { userWallet } = req.query;
+
+    if (!validateWalletAddress(userWallet)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('wallet_address', userWallet)
+      .eq('is_active', true)
+      .single();
+
+    if (userError || !user) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    if (user.role === 'public_viewer') {
+      return res.status(403).json({ error: 'Public viewers cannot view case evidence' });
+    }
 
     const { data: evidence, error } = await supabase
       .from('evidence')

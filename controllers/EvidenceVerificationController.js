@@ -158,7 +158,8 @@ const verifyIntegrity = async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    res.status(500).json({ error: 'Verification failed: ' + error.message });
+    console.error('Verification failed:', error);
+    res.status(500).json({ error: 'Verification failed' });
   }
 };
 
@@ -179,11 +180,17 @@ const generateVerificationCertificate = async (req, res) => {
       issuer: 'EVID-DGC Blockchain Evidence System',
     };
 
+    // Sanitize fileName for Content-Disposition to prevent header injection
+    const sanitizedFileName = (fileName || 'certificate')
+      .replace(/[\r\n"]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .substring(0, 100);
+
     const textContent = `
 EVIDENCE VERIFICATION CERTIFICATE
 
 Certificate ID: ${certificateData.certificateId}
-File Name: ${fileName}
+File Name: ${sanitizedFileName}
 Verification Result: ${verificationResult.toUpperCase()}
 Verification Date: ${new Date(timestamp).toLocaleString()}
 Issued By: ${certificateData.issuer}
@@ -194,7 +201,7 @@ This certificate confirms the integrity verification of the above evidence file.
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="verification_certificate_${fileName}_${Date.now()}.txt"`,
+      `attachment; filename="verification_certificate_${sanitizedFileName}_${Date.now()}.txt"`,
     );
     res.send(Buffer.from(textContent));
   } catch (error) {
@@ -322,6 +329,21 @@ const compareEvidence = async (req, res) => {
 const createComparisonReport = async (req, res) => {
   try {
     const { evidenceIds, reportData, generatedBy } = req.body;
+
+    if (!validateWalletAddress(generatedBy)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('wallet_address', generatedBy)
+      .eq('is_active', true)
+      .single();
+
+    if (userError || !user || !['admin', 'auditor'].includes(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized: Admin or Auditor role required' });
+    }
 
     if (!evidenceIds || !Array.isArray(evidenceIds) || evidenceIds.length < 2) {
       return res.status(400).json({ error: 'At least 2 evidence IDs required' });

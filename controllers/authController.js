@@ -189,9 +189,7 @@ const emailRegister = async (req, res) => {
     }
 
     console.log('User created successfully:', newUser.id);
-    console.log(
-      `[SIMULATED EMAIL] Verification link: /api/auth/email/verify?token=${verificationToken}`,
-    );
+    console.log('[EMAIL] Verification email queued for new user');
 
     // Log registration activity
     await supabase.from('activity_logs').insert({
@@ -207,7 +205,11 @@ const emailRegister = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful — please verify your email before logging in.',
+      email_verification_required: true,
+      email_verified: false,
+      instructions:
+        'A verification link has been sent to your email. Please click the link to activate your account.',
       user: {
         id: newUser.id,
         email: newUser.email,

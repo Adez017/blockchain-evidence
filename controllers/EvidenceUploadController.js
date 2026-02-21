@@ -52,6 +52,10 @@ const uploadEvidence = async (req, res) => {
       'application/msword': 50,
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 50,
       'text/plain': 10,
+      'application/zip': 500,
+      'application/x-rar-compressed': 500,
+      'application/vnd.ms-excel': 50,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 50,
     };
 
     const maxSize = allowedTypes[file.mimetype];
