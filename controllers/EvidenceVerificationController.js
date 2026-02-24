@@ -208,13 +208,29 @@ const verifyIntegrity = async (req, res) => {
 // Generate verification certificate
 const generateVerificationCertificate = async (req, res) => {
   try {
-    const { fileName, verificationResult, timestamp } = req.body;
+    const { evidenceId, userWallet } = req.body;
 
-    if (!verificationResult || typeof verificationResult !== 'string') {
-      return res.status(400).json({ error: 'verificationResult is required and must be a string' });
+    const user = await authorizeAdminOrAuditor(userWallet, res);
+    if (!user) return;
+
+    if (!evidenceId) {
+      return res.status(400).json({ error: 'evidenceId is required' });
     }
 
-    const validTimestamp = isFinite(Date.parse(timestamp)) ? new Date(timestamp) : new Date();
+    const { data: evidence, error } = await supabase
+      .from('evidence')
+      .select('*')
+      .eq('id', evidenceId)
+      .single();
+
+    if (error || !evidence) {
+      return res.status(404).json({ error: 'Evidence not found' });
+    }
+
+    const verification = await integratedEvidenceService.verifyEvidence(evidenceId);
+    const verificationResult = verification.overallValid ? 'PASSED' : 'FAILED';
+    const validTimestamp = new Date();
+    const fileName = evidence.title || evidence.file_name || `evidence_${evidenceId}`;
 
     const certificateData = {
       fileName,
@@ -360,8 +376,8 @@ const compareEvidence = async (req, res) => {
 
     const enrichedEvidence = evidenceItems.map((item) => ({
       ...item,
-      blockchain_verified: !!item.blockchain_tx_hash,
-      verification_timestamp: item.blockchain_tx_hash ? new Date().toISOString() : null,
+      has_blockchain_tx: !!item.blockchain_tx_hash,
+      comparison_requested_at: item.blockchain_tx_hash ? new Date().toISOString() : null,
     }));
 
     res.json({
