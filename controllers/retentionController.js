@@ -113,6 +113,10 @@ const getEvidenceExpiry = async (req, res) => {
       case 'legal_hold':
         query = query.eq('legal_hold', true);
         break;
+      case 'all':
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid filter value' });
     }
 
     const { data: evidence, error } = await query.order('expiry_date', { ascending: true });

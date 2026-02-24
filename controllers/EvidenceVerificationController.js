@@ -30,6 +30,11 @@ const authorizeAdminOrAuditor = async (wallet, res) => {
 const verifyEvidenceHash = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userWallet } = req.query;
+
+    const user = await authorizeAdminOrAuditor(userWallet, res);
+    if (!user) return;
+
     const { data: evidence, error } = await supabase
       .from('evidence')
       .select('id, blockchain_tx_hash')
@@ -62,6 +67,11 @@ const verifyEvidenceHash = async (req, res) => {
 const getBlockchainProof = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userWallet } = req.query;
+
+    const user = await authorizeAdminOrAuditor(userWallet, res);
+    if (!user) return;
+
     const { data: evidence, error } = await supabase
       .from('evidence')
       .select('id, timestamp, blockchain_tx_hash')
