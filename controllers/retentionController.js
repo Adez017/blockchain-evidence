@@ -1,5 +1,6 @@
 const { supabase } = require('../config');
 const { validateWalletAddress } = require('../middleware/verifyAdmin');
+const { createNotification } = require('../services/notificationService');
 
 const getRetentionPolicies = async (req, res) => {
   try {
@@ -65,4 +66,289 @@ const exportTimelinePdf = async (req, res) => {
   }
 };
 
-module.exports = { getRetentionPolicies, createRetentionPolicy, exportTimelinePdf };
+// Get evidence with expiry information
+const getEvidenceExpiry = async (req, res) => {
+  try {
+    const { filter = 'all', wallet } = req.query;
+
+    if (!validateWalletAddress(wallet)) {
+      return res.status(403).json({ error: 'Unauthorized access: Invalid wallet address' });
+    }
+
+    // Verify user exists, is active, and has an authorized role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, is_active')
+      .eq('wallet_address', wallet.toLowerCase())
+      .single();
+
+    if (userError || !user || !user.is_active) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    if (!['admin', 'investigator', 'evidence_manager', 'auditor'].includes(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized: Insufficient role' });
+    }
+
+    let query = supabase.from('evidence').select('*');
+
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    switch (filter) {
+      case 'expired':
+        query = query.lt('expiry_date', now.toISOString()).eq('legal_hold', false);
+        break;
+      case '30days':
+        query = query
+          .lte('expiry_date', thirtyDaysFromNow.toISOString())
+          .gte('expiry_date', now.toISOString());
+        break;
+      case '7days':
+        query = query
+          .lte('expiry_date', sevenDaysFromNow.toISOString())
+          .gte('expiry_date', now.toISOString());
+        break;
+      case 'legal_hold':
+        query = query.eq('legal_hold', true);
+        break;
+      case 'all':
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid filter value' });
+    }
+
+    const { data: evidence, error } = await query.order('expiry_date', { ascending: true });
+    if (error) throw error;
+
+    res.json({ success: true, evidence });
+  } catch (error) {
+    console.error('Get evidence expiry error:', error);
+    res.status(500).json({ error: 'Failed to get evidence expiry information' });
+  }
+};
+
+// Set legal hold on evidence
+const setLegalHold = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { legalHold, userWallet } = req.body;
+
+    if (typeof legalHold !== 'boolean') {
+      return res.status(400).json({ error: 'legalHold must be a boolean value' });
+    }
+
+    if (!validateWalletAddress(userWallet)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    // Verify user exists, is active, and has an authorized role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, is_active')
+      .eq('wallet_address', userWallet.toLowerCase())
+      .single();
+
+    if (userError || !user) {
+      return res.status(403).json({ error: 'User not found' });
+    }
+
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'User account is inactive' });
+    }
+
+    if (!['admin', 'investigator', 'evidence_manager'].includes(user.role)) {
+      return res
+        .status(403)
+        .json({ error: 'Unauthorized: Insufficient role for legal hold operations' });
+    }
+
+    const { data: evidence, error: fetchError } = await supabase
+      .from('evidence')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !evidence) {
+      return res.status(404).json({ error: 'Evidence not found' });
+    }
+
+    const { error } = await supabase
+      .from('evidence')
+      .update({ legal_hold: legalHold })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // Audit log (check returned error since Supabase does not throw on DB failures)
+    const { error: auditLogError } = await supabase.from('activity_logs').insert({
+      user_id: userWallet,
+      action: legalHold ? 'legal_hold_set' : 'legal_hold_removed',
+      details: `Evidence ID: ${id}`,
+      timestamp: new Date().toISOString(),
+    });
+    if (auditLogError) {
+      console.error('Failed to log legal hold action:', auditLogError);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Set legal hold error:', error);
+    res.status(500).json({ error: 'Failed to set legal hold' });
+  }
+};
+
+// Apply retention policy to multiple evidence
+const bulkRetentionPolicy = async (req, res) => {
+  try {
+    const { policyId, evidenceIds, userWallet } = req.body;
+
+    if (!validateWalletAddress(userWallet)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    // Verify user exists, is active, and has an authorized role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, is_active')
+      .eq('wallet_address', userWallet.toLowerCase())
+      .single();
+
+    if (userError || !user || !user.is_active) {
+      return res.status(403).json({ error: 'User not found or inactive' });
+    }
+
+    if (!['admin', 'investigator', 'evidence_manager'].includes(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized: Insufficient role for bulk operations' });
+    }
+
+    if (!evidenceIds || !Array.isArray(evidenceIds) || evidenceIds.length === 0) {
+      return res.status(400).json({ error: 'Invalid or empty evidenceIds' });
+    }
+
+    if (!policyId) {
+      return res.status(400).json({ error: 'policyId is required' });
+    }
+
+    const { data: policy, error: policyError } = await supabase
+      .from('retention_policies')
+      .select('*')
+      .eq('id', policyId)
+      .single();
+
+    if (policyError || !policy) {
+      return res.status(404).json({ error: 'Retention policy not found' });
+    }
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + policy.retention_days);
+
+    const { error, count } = await supabase
+      .from('evidence')
+      .update(
+        {
+          retention_policy_id: policyId,
+          expiry_date: expiryDate.toISOString(),
+        },
+        { count: 'exact' },
+      )
+      .in('id', evidenceIds)
+      .select();
+
+    if (error) throw error;
+
+    // Audit log (check returned error since Supabase does not throw on DB failures)
+    const { error: auditLogError } = await supabase.from('activity_logs').insert({
+      user_id: userWallet,
+      action: 'bulk_retention_policy_applied',
+      details: JSON.stringify({
+        policy_id: policyId,
+        evidence_ids: evidenceIds,
+        affected_count: count || 0,
+      }),
+      timestamp: new Date().toISOString(),
+    });
+    if (auditLogError) {
+      console.error('Failed to log bulk retention policy action:', auditLogError);
+    }
+
+    res.json({ success: true, updated: count || 0 });
+  } catch (error) {
+    console.error('Bulk retention policy error:', error);
+    res.status(500).json({ error: 'Failed to apply retention policy' });
+  }
+};
+
+// Check for expiring evidence and send notifications
+const checkExpiry = async (req, res) => {
+  try {
+    const { wallet } = req.query;
+
+    if (!validateWalletAddress(wallet)) {
+      return res.status(403).json({ error: 'Unauthorized access: Invalid wallet address' });
+    }
+
+    // Verify user exists, is active, and has an authorized role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, is_active')
+      .eq('wallet_address', wallet.toLowerCase())
+      .single();
+
+    if (userError || !user || !user.is_active) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    if (!['admin', 'investigator', 'evidence_manager', 'auditor'].includes(user.role)) {
+      return res.status(403).json({ error: 'Unauthorized: Insufficient role' });
+    }
+
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    let notificationsSent = 0;
+
+    const { data: expiring30, error: error30 } = await supabase
+      .from('evidence')
+      .select('*')
+      .lte('expiry_date', thirtyDaysFromNow.toISOString())
+      .gte('expiry_date', now.toISOString())
+      .eq('legal_hold', false);
+
+    if (error30) {
+      console.error('Database error checking expiry:', error30);
+      return res.status(500).json({ error: 'Failed to fetch expiring evidence' });
+    }
+
+    if (expiring30 && expiring30.length > 0) {
+      const notificationPromises = expiring30.map((evidence) =>
+        createNotification(
+          evidence.submitted_by,
+          'Evidence Expiry Warning',
+          `Evidence "${evidence.title}" will expire in 30 days`,
+          'system',
+          { evidence_id: evidence.id, expiry_date: evidence.expiry_date },
+        ),
+      );
+
+      const results = await Promise.allSettled(notificationPromises);
+      notificationsSent = results.filter((r) => r.status === 'fulfilled' && r.value != null).length;
+    }
+
+    res.json({ success: true, notifications_sent: notificationsSent });
+  } catch (error) {
+    console.error('Check expiry error:', error);
+    res.status(500).json({ error: 'Failed to check expiring evidence' });
+  }
+};
+
+module.exports = {
+  getRetentionPolicies,
+  createRetentionPolicy,
+  exportTimelinePdf,
+  getEvidenceExpiry,
+  setLegalHold,
+  bulkRetentionPolicy,
+  checkExpiry,
+};

@@ -1,5 +1,6 @@
 const { supabase, allowedRoles } = require('../config');
 const { validateWalletAddress } = require('../middleware/verifyAdmin');
+const crypto = require('crypto');
 
 // Wallet login
 const walletLogin = async (req, res) => {
@@ -26,13 +27,16 @@ const walletLogin = async (req, res) => {
       return res.status(401).json({ error: 'Wallet address not registered' });
     }
 
-    // Log login activity
-    await supabase.from('activity_logs').insert({
-      user_id: user.wallet_address,
+    // Log login activity (check returned error since Supabase does not throw on DB failures)
+    const { error: logError } = await supabase.from('activity_logs').insert({
+      user_id: user.id,
       action: 'wallet_login',
       details: JSON.stringify({ auth_type: 'wallet' }),
       timestamp: new Date().toISOString(),
     });
+    if (logError) {
+      console.error('Failed to log wallet login activity:', logError);
+    }
 
     res.json({
       success: true,
@@ -84,13 +88,22 @@ const emailLogin = async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Log login activity
-    await supabase.from('activity_logs').insert({
-      user_id: user.email,
+    // Block unverified email accounts (catches false, null, and undefined for legacy rows)
+    // Intentionally returns the same generic error to prevent credential enumeration
+    if (user.email_verified !== true) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Log login activity (check returned error since Supabase does not throw on DB failures)
+    const { error: logError } = await supabase.from('activity_logs').insert({
+      user_id: user.id,
       action: 'email_login',
       details: JSON.stringify({ auth_type: 'email' }),
       timestamp: new Date().toISOString(),
     });
+    if (logError) {
+      console.error('Failed to log email login activity:', logError);
+    }
 
     res.json({
       success: true,
@@ -112,204 +125,299 @@ const emailLogin = async (req, res) => {
 
 // Email registration
 const emailRegister = async (req, res) => {
-    try {
-        const { email, password, fullName, role, department, jurisdiction } = req.body;
-        
-        // Avoid logging PII (email) in production
-        console.log('Email registration request:', { role, department, jurisdiction });
+  try {
+    const { email, password, fullName, role, department, jurisdiction } = req.body;
 
+    // Avoid logging PII (email) in production
+    console.log('Email registration request:', { role, department, jurisdiction });
 
-        if (!email || !password || !fullName || !role) {
-            return res.status(400).json({ error: 'Email, password, full name, and role are required' });
-        }
+    if (!email || !password || !fullName || !role) {
+      return res.status(400).json({ error: 'Email, password, full name, and role are required' });
+    }
 
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters long' });
-        }
+    // TODO: integrate breached-password check (e.g., HaveIBeenPwned API / zxcvbn scoring)
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
 
-        if (role === 'admin') {
-            return res.status(403).json({ error: 'Administrator registration is not allowed via public registration.' });
-        }
+    // Lightweight email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email address format' });
+    }
 
-        if (!allowedRoles.includes(role)) {
-            return res.status(400).json({ error: 'Invalid role selected' });
-        }
+    if (role === 'admin') {
+      return res
+        .status(403)
+        .json({ error: 'Administrator registration is not allowed via public registration.' });
+    }
 
-        // Check if email already exists
-        const { data: existingUser } = await supabase
-            .from('users')
-            .select('email')
-            .eq('email', email.toLowerCase())
-            .single();
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role selected' });
+    }
 
-        if (existingUser) {
-            return res.status(409).json({ error: 'Email address already registered' });
-        }
+    // Check if email already exists
+    const { data: existingUser, error: lookupError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email.toLowerCase())
+      .single();
 
-        // Hash password using database function
-        const { data: hashedPassword, error: hashError } = await supabase
-            .rpc('hash_password', { password });
+    if (lookupError && lookupError.code !== 'PGRST116') {
+      console.error('Email lookup error:', lookupError);
+      return res.status(500).json({ error: 'Unable to verify email availability' });
+    }
 
-        if (hashError) {
-            console.error('Password hashing error:', hashError);
-            throw hashError;
-        }
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email address already registered' });
+    }
 
-        // Create user
-        const { data: newUser, error } = await supabase
-            .from('users')
-            .insert({
-                email: email.toLowerCase(),
-                password_hash: hashedPassword,
-                full_name: fullName,
-                role: role,
-                department: department || 'General',
-                jurisdiction: jurisdiction || 'General',
-                auth_type: 'email',
-                account_type: 'real',
-                created_by: 'self_registration',
-                is_active: true,
-                email_verified: true
-            })
-            .select()
-            .single();
+    // Hash password using database function
+    const { data: hashedPassword, error: hashError } = await supabase.rpc('hash_password', {
+      password,
+    });
 
-        if (error) {
-            console.error('User creation error:', error);
-            throw error;
-        }
+    if (hashError) {
+      console.error('Password hashing error:', hashError);
+      throw hashError;
+    }
 
-        console.log('User created successfully:', newUser.id);
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
 
-        // Log registration activity
-        await supabase
-            .from('activity_logs')
-            .insert({
-                user_id: newUser.email,
-                action: 'email_registration',
-                details: JSON.stringify({ 
-                    role: role,
-                    auth_type: 'email',
-                    department: department || 'General'
-                }),
-                timestamp: new Date().toISOString()
-            });
+    // Create user
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert({
+        email: email.toLowerCase(),
+        password_hash: hashedPassword,
+        full_name: fullName,
+        role: role,
+        department: department || 'General',
+        jurisdiction: jurisdiction || 'General',
+        auth_type: 'email',
+        account_type: 'real',
+        created_by: 'self_registration',
+        is_active: true,
+        email_verified: false,
+        verification_token: verificationToken,
+        verification_token_expires: tokenExpires,
+      })
+      .select()
+      .single();
 
-        res.json({ 
-          success: true, 
-          message: 'Registration successful',
-          user: {
-            id: newUser.id,
-            email: newUser.email,
-            full_name: newUser.full_name,
-            role: newUser.role,
-            department: newUser.department,
-            jurisdiction: newUser.jurisdiction,
-            auth_type: newUser.auth_type
-          }
-        });
-      } catch (error) {
-        console.error('Email registration error:', error);
-        res.status(500).json({ error: 'Registration failed. Please try again later.' });
-      }
+    if (error) {
+      console.error('User creation error:', error);
+      throw error;
+    }
+
+    console.log('User created successfully:', newUser.id);
+
+    // Log registration activity (check returned error since Supabase does not throw on DB failures)
+    const { error: logError } = await supabase.from('activity_logs').insert({
+      user_id: newUser.id,
+      action: 'email_registration',
+      details: JSON.stringify({
+        role: role,
+        auth_type: 'email',
+        department: department || 'General',
+      }),
+      timestamp: new Date().toISOString(),
+    });
+    if (logError) {
+      console.error('Failed to log email registration activity:', logError);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful — please verify your email before logging in.',
+      email_verification_required: true,
+      email_verified: false,
+      instructions:
+        'A verification link has been generated. Email delivery is not yet configured; contact an administrator to activate your account.',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        full_name: newUser.full_name,
+        role: newUser.role,
+        department: newUser.department,
+        jurisdiction: newUser.jurisdiction,
+        auth_type: newUser.auth_type,
+      },
+    });
+  } catch (error) {
+    console.error('Email registration error:', error);
+    res.status(500).json({ error: 'Registration failed. Please try again later.' });
+  }
 };
 
 // Wallet registration
 const walletRegister = async (req, res) => {
-    try {
-        const { walletAddress, fullName, role, department, jurisdiction, badgeNumber } = req.body;
-        
-        console.log('Wallet registration request:', {
-          role,
-          department,
-          jurisdiction,
-          walletSuffix: walletAddress?.slice(-6)
-        });
-        if (!validateWalletAddress(walletAddress)) {
-            return res.status(400).json({ error: 'Invalid wallet address' });
-        }
+  try {
+    const { walletAddress, fullName, role, department, jurisdiction, badgeNumber } = req.body;
 
+    console.log('Wallet registration request:', {
+      role,
+      department,
+      jurisdiction,
+      walletSuffix: walletAddress?.slice(-6),
+    });
 
-        if (!fullName || !role) {
-            return res.status(400).json({ error: 'Full name and role are required' });
-        }
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Wallet address is required' });
+    }
 
-        if (role === 'admin') {
-            return res.status(403).json({ error: 'Administrator registration is not allowed via public registration.' });
-        }
+    if (!validateWalletAddress(walletAddress)) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
 
-        if (!allowedRoles.includes(role)) {
-            return res.status(400).json({ error: 'Invalid role selected' });
-        }
+    if (!fullName || !role) {
+      return res.status(400).json({ error: 'Full name and role are required' });
+    }
 
-        // Check if wallet already exists
-        const { data: existingUser } = await supabase
-            .from('users')
-            .select('wallet_address')
-            .eq('wallet_address', walletAddress.toLowerCase())
-            .single();
+    if (role === 'admin') {
+      return res
+        .status(403)
+        .json({ error: 'Administrator registration is not allowed via public registration.' });
+    }
 
-        if (existingUser) {
-            return res.status(409).json({ error: 'Wallet address already registered' });
-        }
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role selected' });
+    }
 
-        // Create user
-        const { data: newUser, error } = await supabase
-            .from('users')
-            .insert({
-                wallet_address: walletAddress.toLowerCase(),
-                full_name: fullName,
-                role: role,
-                department: department || 'General',
-                jurisdiction: jurisdiction || 'General',
-                badge_number: badgeNumber || '',
-                auth_type: 'wallet',
-                account_type: 'real',
-                created_by: 'self_registration',
-                is_active: true
-            })
-            .select()
-            .single();
+    // Check if wallet already exists
+    const { data: existingUser, error: lookupError } = await supabase
+      .from('users')
+      .select('wallet_address')
+      .eq('wallet_address', walletAddress.toLowerCase())
+      .single();
 
-        if (error) {
-            console.error('Wallet user creation error:', error);
-            throw error;
-        }
+    if (lookupError && lookupError.code !== 'PGRST116') {
+      console.error('Wallet lookup error:', lookupError);
+      return res.status(500).json({ error: 'Unable to verify wallet availability' });
+    }
 
-        console.log('Wallet user created successfully:', newUser.id);
+    if (existingUser) {
+      return res.status(409).json({ error: 'Wallet address already registered' });
+    }
 
-        // Log registration activity
-        await supabase
-            .from('activity_logs')
-            .insert({
-                user_id: newUser.wallet_address,
-                action: 'wallet_registration',
-                details: JSON.stringify({ 
-                    role: role,
-                    auth_type: 'wallet',
-                    department: department || 'General'
-                }),
-                timestamp: new Date().toISOString()
-            });
+    // Create user
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert({
+        wallet_address: walletAddress.toLowerCase(),
+        full_name: fullName,
+        role: role,
+        department: department || 'General',
+        jurisdiction: jurisdiction || 'General',
+        badge_number: badgeNumber || '',
+        auth_type: 'wallet',
+        account_type: 'real',
+        created_by: 'self_registration',
+        is_active: true,
+      })
+      .select()
+      .single();
 
-        res.json({ 
-          success: true, 
-          message: 'Registration successful',
-          user: {
-            id: newUser.id,
-            wallet_address: newUser.wallet_address,
-            full_name: newUser.full_name,
-            role: newUser.role,
-            department: newUser.department,
-            jurisdiction: newUser.jurisdiction,
-            badge_number: newUser.badge_number,
-            auth_type: newUser.auth_type
-          }
-        });
-      } catch (error) {
-        console.error('Wallet registration error:', error);
-        res.status(500).json({ error: 'Registration failed. Please try again later.' });
-      }
+    if (error) {
+      console.error('Wallet user creation error:', error);
+      throw error;
+    }
+
+    console.log('Wallet user created successfully:', newUser.id);
+
+    // Log registration activity (check returned error since Supabase does not throw on DB failures)
+    const { error: logError } = await supabase.from('activity_logs').insert({
+      user_id: newUser.id,
+      action: 'wallet_registration',
+      details: JSON.stringify({
+        role: role,
+        auth_type: 'wallet',
+        department: department || 'General',
+      }),
+      timestamp: new Date().toISOString(),
+    });
+    if (logError) {
+      console.error('Failed to log wallet registration activity:', logError);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      user: {
+        id: newUser.id,
+        wallet_address: newUser.wallet_address,
+        full_name: newUser.full_name,
+        role: newUser.role,
+        department: newUser.department,
+        jurisdiction: newUser.jurisdiction,
+        badge_number: newUser.badge_number,
+        auth_type: newUser.auth_type,
+      },
+    });
+  } catch (error) {
+    console.error('Wallet registration error:', error);
+    res.status(500).json({ error: 'Registration failed. Please try again later.' });
+  }
+};
+
+// Verify Email
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Verification token is required' });
+    }
+
+    // Get user by token (only fetch needed fields to avoid exposing password_hash)
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email_verified, verification_token_expires')
+      .eq('verification_token', token)
+      .single();
+
+    if (error || !user) {
+      return res.status(400).json({ error: 'Invalid or expired verification token' });
+    }
+
+    // Check expiry
+    if (new Date(user.verification_token_expires) < new Date()) {
+      return res.status(400).json({ error: 'Verification token has expired' });
+    }
+
+    // Update user
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        email_verified: true,
+        verification_token: null,
+        verification_token_expires: null,
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      console.error('Verify email error:', updateError);
+      return res.status(500).json({ error: 'Failed to verify email' });
+    }
+
+    // Audit log for email verification (check returned error since Supabase does not throw on DB failures)
+    const { error: auditLogError } = await supabase.from('activity_logs').insert({
+      user_id: user.id,
+      action: 'email_verified',
+      details: JSON.stringify({ user_id: user.id, verified: true }),
+      timestamp: new Date().toISOString(),
+    });
+    if (auditLogError) {
+      console.error('Failed to log email verification:', auditLogError);
+    }
+
+    res.json({ success: true, message: 'Email verified successfully' });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'Verification failed' });
+  }
 };
 
 module.exports = {
@@ -317,4 +425,5 @@ module.exports = {
   emailRegister,
   walletLogin,
   walletRegister,
+  verifyEmail,
 };
