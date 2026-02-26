@@ -18,7 +18,7 @@
             <span>EVID-DGC</span>
         </div>
         <nav class="nav-menu">
-            <a href="javascript:history.back()" class="nav-link">
+            <a href="#" class="nav-link" id="backButton">
                 <i data-lucide="arrow-left"></i>
                 <span>Back</span>
             </a>
@@ -166,6 +166,17 @@
         });
     </script>
     <script src="footer.js"></script>
+    <script>
+        document.getElementById("backButton").addEventListener("click", function (e) {
+        e.preventDefault();
+
+        if (window.history.length > 1) {
+        window.history.back();
+        } else {
+        window.location.href = "index.html";
+        }
+    });
+</script>
 </body>
 
 </html>

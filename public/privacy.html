@@ -18,7 +18,7 @@
             <span>EVID-DGC</span>
         </div>
         <nav class="nav-menu">
-            <a href="javascript:history.back()" class="nav-link">
+            <a href="#" class="nav-link" id="backButton">
                 <i data-lucide="arrow-left"></i>
                 <span>Back</span>
             </a>
@@ -175,6 +175,17 @@
       document.addEventListener("DOMContentLoaded", function () {
         lucide.createIcons();
       });
+    </script>
+    <script>
+      document.getElementById("backButton").addEventListener("click", function (e) {
+      e.preventDefault();
+
+      if (document.referrer && document.referrer !== window.location.href) {
+        window.history.back();
+      } else {
+        window.location.href = "index.html";
+     }
+        });
     </script>
 
     <script>
